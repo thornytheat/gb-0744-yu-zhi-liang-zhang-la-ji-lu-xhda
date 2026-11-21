@@ -42,3 +42,19 @@ output { align-self: center; color: var(--ok); }
   .scroller { overflow: visible; max-height: none; }
   .gauges { break-inside: avoid; }
 }
+
+.dispatch .hint { margin: 0; padding: 10px 13px; color: var(--muted); }
+.dispatch .hint strong { color: var(--ink); font-family: var(--mono); }
+.panel.dispatch + .panel { margin-top: var(--gap); }
+.panel + .panel, .panel + .tables, .tables + .panel, .panel + details { margin-top: var(--gap); }
+details.raw > summary { cursor: pointer; padding: 10px 13px; font-weight: 600; }
+details.raw h3 { margin: 0; padding: 9px 13px 4px; font-size: 13px; }
+details.raw table { margin-bottom: var(--gap); }
+td.wide { white-space: normal; min-width: 240px; }
+@media print { details.raw { display: block; } details.raw > summary { display: none; } }
+#release { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 0 13px 12px; }
+#release button:not(.outline) { background: var(--accent-dark); color: var(--accent-contrast); border-color: var(--accent-dark); }
+#release button:not(.outline):disabled { background: var(--paper-deep); color: var(--muted); border-color: var(--line-dark); cursor: not-allowed; }
+#release output[data-error] { color: var(--bad); }
+#release output[data-ok] { color: var(--ok); }
+@media print { #release { display: none; } }

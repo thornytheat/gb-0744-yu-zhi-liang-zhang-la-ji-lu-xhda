@@ -15,7 +15,10 @@ def classify(targets, ends):
         ]
         total = None
         if reasons:
-            status = "待复测"
+            # 锚回缩吃掉全部伸长是真实的结构问题，不能按“待复测”带过；
+            # 缺力级、位移倒序属于记录不足，才是待复测。
+            physical = any(reason.endswith("-NO_EXTENSION") for reason in reasons)
+            status = "超限" if physical else "待复测"
         else:
             total = sum(measurements)
             for expected, actual, side in zip(intended, measurements, ("L", "R")):

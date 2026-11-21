@@ -14,6 +14,8 @@ from app.modules.m3_alignment.targets import parse_targets
 from app.modules.m4_elongation.service import compensate
 from app.modules.m5_verdicts.service import classify
 from app.modules.m6_reconcile.service import ledger
+from app.modules.m8_disposition.service import build as build_disposition
+from app.modules.m7_runs.store import Stale
 from app.stages import label
 
 
@@ -25,6 +27,14 @@ def serialized(value):
     if isinstance(value, Decimal):
         return label(value)
     return value.isoformat()
+
+
+def _tally(rows):
+    counts = {}
+    for row in rows:
+        if row["待处置"]:
+            counts[row["处置类型"]] = counts.get(row["处置类型"], 0) + 1
+    return counts
 
 
 def calculate(data):
@@ -39,6 +49,15 @@ def calculate(data):
     verdicts = classify(targets, measurements)
     issues = sorted(first_issues + calibration_issues + force_issues, key=lambda row: row["源行"])
     conservation, beams = ledger(len(payload["readings"]), aligned, issues, duplicates, verdicts)
+    disposition = build_disposition(
+        targets,
+        measurements,
+        verdicts,
+        issues,
+        duplicates,
+        aligned,
+        payload["readings"],
+    )
     output = {
         "清单": {
             "编号": digest(VERSION.encode() + data)[:24],
@@ -47,6 +66,8 @@ def calculate(data):
             "计算时间": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "时区": "Asia/Shanghai",
             "耗时毫秒": round((perf_counter() - began) * 1000),
+            "处置结论": disposition["移交结论"],
+            "待处置端位": disposition["待处置端位"],
         },
         "原始采信": [
             {
@@ -89,13 +110,48 @@ def calculate(data):
         "判验": verdicts,
         "读数勾稽": conservation,
         "梁号勾稽": beams,
+        "处置摘要": {
+            "移交结论": disposition["移交结论"],
+            "待处置端位": disposition["待处置端位"],
+            "优先现场处置": disposition["优先现场处置"],
+            "梁": [
+                {
+                    "梁号": row["梁号"],
+                    "结论": row["结论"],
+                    "可移交发运": row["可移交发运"],
+                    "阻断钢束": row["阻断钢束"],
+                }
+                for row in disposition["梁发运"]
+            ],
+            "按类型": _tally(disposition["处置顺序"]),
+        },
+        **disposition,
         "隔离": issues,
         "重复": duplicates,
     }
     return json.loads(json.dumps(output, default=serialized, ensure_ascii=False))
 
 
-def run_once(history, data):
+def run_once(history, data, refresh=False):
+    """同一批内容只开一张处置单；refresh 时才重算同一张单。
+
+    重算失败会抛出 History 的 Stale，旧版处置单原样保留。
+    """
     key = digest(VERSION.encode() + data)[:24]
     existing = history.find(key)
-    return (existing, True) if existing is not None else history.publish(key, calculate(data))
+    if existing is not None and not refresh:
+        return existing, True
+    if existing is None:
+        return history.publish(key, lambda: calculate(data), source=data)
+    return history.recompute(key, lambda: calculate(data)), True
+
+
+def run_stored(history, key):
+    """从存档的原始上传重算同一张处置单，不新开单。
+
+    没有原始上传（旧版只存结果）或重算失败时抛 History 的 Stale。
+    """
+    source = history.source_of(key)
+    if source is None:
+        raise Stale("该批次没有保存原始上传，无法原地重算")
+    return history.recompute(key, lambda: calculate(source))

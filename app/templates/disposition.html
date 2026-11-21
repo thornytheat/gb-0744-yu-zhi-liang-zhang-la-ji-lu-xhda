@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block stage %}
+  {% if legacy %}
+  <section class="panel dispatch">
+    <h2>旧版批次</h2>
+    <p class="hint">该批次由旧版规则存档，还没有处置单。请在上方用同一份班组记录复算生成，旧版结果不会覆盖。</p>
+  </section>
+  {% else %}
+  <section class="panel dispatch">
+    <h2>移交结论 <small class="badge" data-status="{% if run['移交结论'] == '可移交发运' %}通过{% else %}待复测{% endif %}">{{ run['移交结论'] }}</small></h2>
+    <p class="hint">
+      待处置端位 <strong>{{ run['待处置端位'] }}</strong> 个，其中优先现场处置 <strong>{{ run['优先现场处置'] }}</strong> 个。
+      梁只有全部钢束处置完毕且结论通过才可移交发运；记录类问题只补测补录，不安排现场复张，避免梁无谓停工。
+    </p>
+    <form id="release" action="{{ url_for('release', key=meta['编号']) }}" method="post">
+      <button {% if run['移交结论'] != '可移交发运' %}disabled{% endif %}>移交发运</button>
+      <button type="button" class="outline" id="refresh" data-key="{{ meta['编号'] }}">原地重算</button>
+      <output id="release-notice" role="status">{% if run['移交结论'] != '可移交发运' %}仍有钢束未处置完毕或未通过，暂缓发运。{% endif %}</output>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>今晚处置顺序 <small>现场问题优先，记录问题并行处理</small></h2>
+    {% if run['处置顺序'] %}
+    <div class="scroller" tabindex="0" aria-label="今晚处置顺序"><table>
+      <thead><tr><th scope="col">今晚顺序</th><th scope="col">梁号</th><th scope="col">钢束</th><th scope="col">端位</th><th scope="col">端判验</th><th scope="col">处置类型</th><th scope="col">分组</th><th scope="col">依据</th><th scope="col">下一步</th><th scope="col">停工</th></tr></thead>
+      <tbody>
+      {% for row in run['处置顺序'] %}
+        <tr>
+          <td class="number">{{ row['今晚顺序'] if row['今晚顺序'] is not none else '—' }}</td>
+          <td>{{ row['梁号'] }}</td>
+          <td>{{ row['钢束'] }}</td>
+          <td>{{ row['端位名称'] }}</td>
+          <td><span class="badge" data-status="{{ row['端判验'] }}">{{ row['端判验'] }}</span></td>
+          <td>{{ row['处置类型'] }}{% if row['现场复张'] %} · 复张{% endif %}</td>
+          <td>{{ row['处置分组'] }}</td>
+          <td class="wide">{% if row['处置依据'] %}{% for code in row['处置依据'] %}{{ code }}（{{ row['依据说明'][loop.index0] }}）{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}—{% endif %}</td>
+          <td class="wide">{{ row['下一步']|join('；') or '—' }}</td>
+          <td>{{ '是' if row['停工'] else '否' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}<p class="empty">当前批次无记录。</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>梁发运门禁 <small>全部钢束处置完毕且通过才放行</small></h2>
+    <div class="scroller" tabindex="0" aria-label="梁发运门禁"><table>
+      <thead><tr><th scope="col">梁号</th><th scope="col">设计钢束</th><th scope="col">已通过钢束</th><th scope="col">待处置端位</th><th scope="col">阻断钢束</th><th scope="col">处置完毕</th><th scope="col">结论</th><th scope="col">可移交发运</th></tr></thead>
+      <tbody>
+      {% for row in run['梁发运'] %}
+        <tr>
+          <td>{{ row['梁号'] }}</td>
+          <td class="number">{{ row['设计钢束'] }}</td>
+          <td class="number">{{ row['已通过钢束'] }}</td>
+          <td class="number">{{ row['待处置端位'] }}</td>
+          <td>{{ row['阻断钢束']|join('、') or '—' }}</td>
+          <td>{{ '是' if row['处置完毕'] else '否' }}</td>
+          <td>{{ row['结论'] }}</td>
+          <td>{{ '是' if row['可移交发运'] else '否' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="panel">
+    <h2>附带记录问题 <small>无对应钢束，只核对记录</small></h2>
+    {% if run['附带记录问题'] %}
+    <div class="scroller" tabindex="0" aria-label="附带记录问题"><table>
+      <thead><tr><th scope="col">源行</th><th scope="col">梁号</th><th scope="col">钢束</th><th scope="col">端位</th><th scope="col">原因码</th><th scope="col">处置类型</th><th scope="col">说明</th><th scope="col">下一步</th></tr></thead>
+      <tbody>
+      {% for row in run['附带记录问题'] %}
+        <tr><td class="number">{{ row['源行'] }}</td><td>{{ row['梁号'] }}</td><td>{{ row['钢束'] }}</td><td>{{ row['端位'] }}</td><td>{{ row['原因码'] }}</td><td>{{ row['处置类型'] }}</td><td>{{ row['说明'] }}</td><td>{{ row['下一步']|join('；') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}<p class="empty">当前批次无记录。</p>{% endif %}
+  </section>
+
+  <details class="panel raw">
+    <summary>按端查看原始读数（处置前后均可追溯）</summary>
+    {% for row in run['处置顺序'] %}
+      <h3>{{ row['梁号'] }} / {{ row['钢束'] }} / {{ row['端位名称'] }} · {{ row['处置类型'] }}</h3>
+      <div class="scroller" tabindex="0" aria-label="原读数">
+      <table>
+        <thead><tr><th scope="col">源行</th><th scope="col">力级%</th><th scope="col">读数</th><th scope="col">单位</th><th scope="col">位移</th><th scope="col">位移单位</th><th scope="col">采信状态</th><th scope="col">对齐千牛</th><th scope="col">对齐位移毫米</th></tr></thead>
+        <tbody>
+        {% for raw in row['原读数'] %}
+          <tr><td class="number">{{ raw['源行'] }}</td><td class="number">{{ raw['力级%'] }}</td><td class="number">{{ raw['读数'] }}</td><td>{{ raw['单位'] }}</td><td class="number">{{ raw['位移'] }}</td><td>{{ raw['位移单位'] }}</td><td>{{ raw['采信状态'] }}</td><td class="number">{{ raw['对齐千牛'] if raw['对齐千牛'] is not none else '—' }}</td><td class="number">{{ raw['对齐位移毫米'] if raw['对齐位移毫米'] is not none else '—' }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    {% endfor %}
+  </details>
+  {% endif %}
+{% endblock %}
